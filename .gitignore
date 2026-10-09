@@ -1,0 +1,80 @@
+# Miscellaneous & OS Metadata
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ & IDE related
+*.iml
+*.ipr
+*.iws
+.idea/
+.vscode/
+
+# Flutter / Dart / Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Local Storage (Hive & Cache)
+*.hive
+*.lock
+
+# Symbolication & Obfuscation
+app.*.symbols
+app.*.map.json
+
+# Native Android Build Artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/.gradle
+.gradle/
+local.properties
+captures/
+*.apk
+*.aab
+
+# Native iOS/macOS Build Artifacts
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/DerivedData
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral
+**/ios/.generated/
+
+# Native Windows Build Artifacts
+/windows/flutter/ephemeral/
+*.exe
+*.dll
+
+# Native Linux Build Artifacts
+/linux/flutter/ephemeral/
+
+# Temporary and Test files
+fix_pair_view.sh
+fix2_pair_view.sh
+.widget_preview/
