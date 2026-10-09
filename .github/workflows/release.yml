@@ -25,12 +25,43 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --release --verbose
+      - name: Build Android APK
+        run: flutter build apk --release --verbose
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: AirDiary-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-ios:
+    name: Build iOS App
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+      - name: Package iOS App Bundle and IPA
+        run: |
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r AirDiary-ios.ipa Payload
+          zip -r AirDiary-ios.zip Runner.app
+          ls -la
+      - name: Upload iOS IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirDiary-ios-ipa
+          path: build/ios/iphoneos/AirDiary-ios.ipa
+      - name: Upload iOS Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirDiary-ios-zip
+          path: build/ios/iphoneos/AirDiary-ios.zip
 
   build-macos:
     name: Build macOS DMG/App
@@ -87,8 +118,8 @@ jobs:
 
   create-release:
     name: Create GitHub Release
-    needs: [build-android, build-macos, build-windows]
-    if: always() && (needs.build-android.result == 'success' || needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
+    needs: [build-android, build-ios, build-macos, build-windows]
+    if: always() && (needs.build-android.result == 'success' || needs.build-ios.result == 'success' || needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -104,11 +135,17 @@ jobs:
           if [ -f release-assets/AirDiary-android-apk/app-release.apk ]; then
             cp release-assets/AirDiary-android-apk/app-release.apk final-assets/AirDiary-android.apk
           fi
-          # Copy macOS DMG
+          # Copy iOS IPA and Zip
+          if [ -f release-assets/AirDiary-ios-ipa/AirDiary-ios.ipa ]; then
+            cp release-assets/AirDiary-ios-ipa/AirDiary-ios.ipa final-assets/AirDiary-ios.ipa
+          fi
+          if [ -f release-assets/AirDiary-ios-zip/AirDiary-ios.zip ]; then
+            cp release-assets/AirDiary-ios-zip/AirDiary-ios.zip final-assets/AirDiary-ios.zip
+          fi
+          # Copy macOS DMG and Zip
           if [ -f release-assets/AirDiary-macos-dmg/AirDiary-macos.dmg ]; then
             cp release-assets/AirDiary-macos-dmg/AirDiary-macos.dmg final-assets/AirDiary-macos.dmg
           fi
-          # Copy macOS Zip
           if [ -f release-assets/AirDiary-macos-zip/AirDiary-macos.zip ]; then
             cp release-assets/AirDiary-macos-zip/AirDiary-macos.zip final-assets/AirDiary-macos.zip
           fi
