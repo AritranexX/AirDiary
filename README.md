@@ -115,7 +115,7 @@ air_diary/
 
 ### 1. Clone & Install Dependencies
 ```bash
-git clone https://github.com/your-username/air_diary.git
+git clone https://github.com/AritranexX/air_diary.git
 cd air_diary
 flutter pub get
 ```
