@@ -1,6 +1,6 @@
 # 📡 AirDiary
 
-> A 100% free, serverless, privacy-first peer-to-peer tracking solution built using Flutter. AirDiary acts as a connectionless local logging diary, securely mapping the location history of your offline devices onto your phone using localized BLE beacon metrics.
+> A 100% free, serverless, privacy-first peer-to-peer tracking and personal safety suite built using Flutter. AirDiary acts as a connectionless local logging diary and real-time security radar, securely mapping the location history and proximity of your offline devices onto your phone using localized BLE beacon metrics, zero-cloud LAN P2P synchronization, geofenced safe zones, and anti-stalking rogue beacon heuristics.
 
 ### 📥 Pre-compiled App Downloads
 [![Download for Android APK](https://img.shields.io/badge/Android-Download%20APK-red?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AritranexX/AirDiary/releases/latest/download/AirDiary-android.apk)
@@ -8,21 +8,54 @@
 [![Download for Windows EXE](https://img.shields.io/badge/Windows-Download%20EXE-red?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/AritranexX/AirDiary/releases/latest/download/AirDiary-windows.zip)
 [![Download for macOS DMG](https://img.shields.io/badge/macOS-Download%20DMG-red?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/AritranexX/AirDiary/releases/latest/download/AirDiary-macos.dmg)
 
-> Direct repository release downloads: [GitHub Releases — AirDiary v1.0.0](https://github.com/AritranexX/AirDiary/releases)
+> Direct repository release downloads: [GitHub Releases — AirDiary](https://github.com/AritranexX/AirDiary/releases)
 
 ---
 
-## 🔒 Core Philosophy: 100% Offline & Serverless
+## 🔒 Core Philosophy: 100% Offline & $0 Serverless
 
 AirDiary was engineered from the ground up on the principle of **Zero-Knowledge Local-First Architecture**:
-- **Zero Cloud Servers**: No accounts, no centralized databases, no analytics trackers, no telemetry.
+- **Zero Cloud Servers & Zero Cost ($0)**: No subscription fees, no accounts, no centralized databases, no analytics trackers, no telemetry.
 - **Connectionless BLE Beacons**: Uses ambient Bluetooth Low Energy manufacturer broadcast packets (`0x01DA`) to announce device identities without establishing paired Bluetooth connections.
-- **Local Persistence**: All tracked targets and location history logs reside strictly inside local on-device Hive storage boxes.
+- **Local Isolated Persistence**: All tracked targets, safe zones, rogue beacon detections, and location history logs reside strictly inside local on-device Hive storage boxes.
+- **Direct LAN P2P Socket Sync**: Synchronizes diaries across your personal laptops and phones via local Wi-Fi UDP discovery & direct TCP streams without ever touching the Internet.
 - **Hardware-Level Privacy**: Hardware GPS coordinate acquisition only executes locally when a registered peer signature is verified.
 
 ---
 
-## 🛠️ How It Works
+## 🛡️ 5 Advanced $0 Local-Only Privacy Capabilities
+
+### 1. 🎯 Real-Time RSSI Signal Radar & Hot/Cold Precision Finder
+* **Real-Time Sweep Radar**: Interactive radar sweep UI rendering live signal strength and proximity zones (Immediate `<1m`, Near `1-4m`, Far `>4m`, Out of Range).
+* **Exponential Weighted Moving Average (EWMA) Filter**: Mathematically cleans raw BLE RSSI flutter:
+  $$\text{smoothedRSSI}_t = (\alpha \cdot \text{rawRSSI}_t) + ((1.0 - \alpha) \cdot \text{smoothedRSSI}_{t-1}) \quad (\alpha = 0.35)$$
+* **Log-Distance Path Loss Model**: Estimates real-time physical distance using calibrated TxPower:
+  $$\text{Distance} = 10^{\frac{\text{TxPower} - \text{smoothedRSSI}}{10 \cdot n}} \quad (\text{TxPower} = -59\text{ dBm}, n = 2.2)$$
+
+### 2. 📍 Left-Behind Smart Separation Alerts & Geofenced Safe Zones
+* **Geofenced Safe Zones**: Designate personal sanctuary zones (Home, Office, Gym) with customizable geofence radius.
+* **Haversine Geodesic Distance Math**: Automatically detects when the user departs a safe zone:
+  $$d = 2R \cdot \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta\phi}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\Delta\lambda}{2}\right)}\right)$$
+* **Smart Separation Heuristic**: Triggers left-behind alerts only when a tracked belonging is absent for $\ge 15$ minutes while outside all designated safe zones, preventing false alarms at home.
+
+### 3. 🚨 Anti-Stalking Shield & Rogue Beacon Detection
+* **Un-paired Beacon Tracking**: Passively monitors ambient BLE beacons without connecting to them.
+* **Multi-Cluster Spatial Heuristic**: Analyzes unknown beacon sightings across space and time.
+* **Suspicious Route Flagging**: If an un-paired beacon is observed traveling with you across $\ge 2$ distinct geographic clusters ($>150\text{m}$ apart) over $\ge 15$ minutes, AirDiary immediately alerts you of potential rogue tracking.
+
+### 4. 🔄 Zero-Cloud Local LAN Direct Socket P2P Sync
+* **Zero-Configuration UDP Discovery**: Discovers peer AirDiary instances on the same Wi-Fi subnet using port `41820` broadcast (`AIRDIARY_DISCOVERY_PING:<selfId>:<deviceName>:41820`).
+* **Direct Socket Delta Exchange**: Establishes secure peer-to-peer TCP streams to sync tracked devices and location diaries across laptops, desktops, and phones.
+* **100% Offline Multi-Device Ecosystem**: Share location logs and device lists between your MacBook and Android phone without any third-party cloud.
+
+### 5. 🗺️ Historical Breadcrumb Timeline & One-Tap Map Deep-Linking
+* **Chronological Diary**: Organized log timeline grouped by date, showing signal metrics, timestamps, and proximity tags.
+* **Trip Path Visualization**: Track movement history and breadcrumb routes per belonging.
+* **Native Map Launch**: Direct one-tap deep-linking into Apple Maps (macOS / iOS) or Google Maps (Android / Windows).
+
+---
+
+## 🛠️ How Core BLE Proximity Works
 
 ```
 ┌─────────────────────────┐                     ┌─────────────────────────┐
@@ -51,56 +84,43 @@ AirDiary was engineered from the ground up on the principle of **Zero-Knowledge 
              │                                    (Saved to Box B: Logs)
 ```
 
-### 1. Cryptographic Identity & Beacon Engine (`BroadcasterService`)
-* Upon initial startup, each client device creates or loads a unique cryptographic `Self_ID` (UUIDv4) stored in local secure preferences.
-* The device then broadcasts an ambient, connectionless BLE advertising packet with manufacturer ID `0x01DA` containing the 16 raw binary bytes of the `Self_ID`.
-* Desktop fail-safe mechanisms gracefully detect OS kernel restrictions (such as on desktop platforms) and transition to passive tracking mode without throwing runtime exceptions.
-
-### 2. Optical Zero-Server Pairing (`PairView`)
-* Two devices can be paired in complete isolation without an internet connection or shared network.
-* Device A displays a scannable high-contrast QR code generated directly from its `Self_ID`.
-* Device B activates its camera sensor via `MobileScanner` to intercept the code. If camera hardware is absent (e.g., desktop workstations), a clean manual alphanumeric input form provides direct fallback.
-* The paired target is committed to local storage **Box A (`TrackedDevices`)**.
-
-### 3. Passive Background Scanner & Throttling (`ScannerService`)
-* The monitoring device runs a continuous BLE scan using `FlutterBluePlus`.
-* When an advertisement packet is intercepted, its manufacturer payload and service data are decoded to extract the UUID signature.
-* If the signature matches a target registered in **Box A**, AirDiary initiates location resolution:
-  * **Mobile (Android/iOS)**: Requests high-accuracy hardware GPS fixes via `Geolocator`.
-  * **Desktop (Windows/macOS)**: Gracefully records `(0.0, 0.0)` stamped with a `Desktop Proximity Only` tag.
-* A strict **5-minute cooldown timer per unique device ID** prevents database saturation and conserves battery and disk space.
-* The record is written directly to **Box B (`LocationLogs`)**.
-
-### 4. Local Analytics Dashboard & Deep-Linking (`DashboardView`)
-* An adaptive UI grid scales responsively across phones, tablets, and wide desktop displays.
-* Each card renders real-time status, last-seen timestamps calculated from local logs, and status badges.
-* Clicking the **Map** button invokes native OS map engines via `url_launcher`:
-  * **Android / Windows**: Deep-links to Google Maps (`https://www.google.com/maps/search/?api=1&query=lat,lng`).
-  * **iOS / macOS**: Deep-links directly to Apple Maps (`https://maps.apple.com/?q=lat,lng`).
-
 ---
 
 ## 📂 Project Architecture
 
 ```
 air_diary/
-├── android/                   # Native Android manifests, permissions & Gradle
+├── android/                   # Native Android manifests, permissions & Gradle 8.14.0
 ├── ios/                       # Native iOS Info.plist & background modes
 ├── macos/                     # Native macOS entitlements & permissions
 ├── windows/                   # Native Windows runner configurations
 ├── lib/
-│   ├── main.dart              # App bootstrap & service initialization
+│   ├── main.dart              # App bootstrap & multi-service initialization
 │   ├── models/
+│   │   ├── lan_peer.dart      # LAN P2P peer model
 │   │   ├── location_log.dart  # Box B schema (device_id, lat, lng, timestamp, tag)
+│   │   ├── rogue_beacon.dart  # Box D schema (signature, sightings, clusters)
+│   │   ├── safe_zone.dart     # Box C schema (geofence radius, haversine math)
 │   │   └── tracked_device.dart# Box A schema (id, name, created_at)
 │   ├── services/
-│   │   ├── broadcaster_service.dart # BLE peripheral beacon transmitter
-│   │   ├── scanner_service.dart     # Ambient BLE scanner & GPS logger
-│   │   └── storage_service.dart     # 100% offline Hive database engine
+│   │   ├── anti_stalking_service.dart # Spatial clustering & rogue beacon detection
+│   │   ├── broadcaster_service.dart   # BLE peripheral beacon transmitter
+│   │   ├── lan_sync_service.dart      # UDP discovery & TCP socket P2P sync
+│   │   ├── scanner_service.dart       # Ambient BLE scanner & unthrottled RSSI stream
+│   │   ├── separation_service.dart    # Left-behind separation alert engine
+│   │   └── storage_service.dart       # 100% offline Hive database engine (Boxes A-E)
 │   └── views/
-│       ├── dashboard_view.dart      # Adaptive dashboard & map launcher
-│       └── pair_view.dart           # Offline QR pairing & camera scanner
-├── pubspec.yaml               # Dependencies & asset manifests
+│       ├── anti_stalking_view.dart    # Rogue beacon security shield & audit
+│       ├── dashboard_view.dart        # 5-tab main view with alert banners
+│       ├── lan_sync_view.dart         # Local LAN peer discovery & sync UI
+│       ├── pair_view.dart             # Offline QR pairing & camera scanner
+│       ├── radar_view.dart            # Real-time RSSI signal radar & distance gauge
+│       ├── safe_zones_view.dart       # Geofenced sanctuary zone manager
+│       └── timeline_view.dart         # Chronological breadcrumb history
+├── test/
+│   ├── models_test.dart       # Serialization & mathematical verification tests
+│   └── services_test.dart     # EWMA, Haversine, LAN protocol & anti-stalking tests
+├── pubspec.yaml               # Dependencies & asset manifests (v1.1.0+2)
 └── README.md                  # Master documentation & download badges
 ```
 
@@ -115,14 +135,15 @@ air_diary/
 
 ### 1. Clone & Install Dependencies
 ```bash
-git clone https://github.com/AritranexX/air_diary.git
-cd air_diary
+git clone https://github.com/AritranexX/AirDiary.git
+cd AirDiary
 flutter pub get
 ```
 
 ### 2. Verify Code Quality & Static Analysis
 ```bash
 flutter analyze
+flutter test
 ```
 
 ### 3. Run the Application
@@ -147,18 +168,18 @@ flutter run -d windows
 
 | Platform | Permission / Entitlement | Purpose |
 | :--- | :--- | :--- |
-| **Android** | `ACCESS_FINE_LOCATION` | Captures GPS coordinates for local diary logs |
+| **Android** | `ACCESS_FINE_LOCATION` | Captures GPS coordinates for local diary logs & safe zones |
 | **Android** | `BLUETOOTH_SCAN` / `ADVERTISE` | Broadcasts & listens for offline BLE beacon packets |
 | **Android** | `CAMERA` | Scans offline QR codes for device pairing |
-| **iOS** | `NSBluetoothAlwaysUsageDescription` | Ambient peer beacon discovery |
-| **iOS** | `NSLocationWhenInUseUsageDescription` | Local GPS location logging |
+| **Android** | `INTERNET` / `ACCESS_WIFI_STATE` | Local subnet LAN P2P socket discovery (port 41820) |
+| **iOS** | `NSBluetoothAlwaysUsageDescription` | Ambient peer beacon discovery & broadcast |
+| **iOS** | `NSLocationWhenInUseUsageDescription` | Local GPS location logging & geofencing |
 | **iOS** | `NSCameraUsageDescription` | Optical device synchronization |
 | **macOS** | `com.apple.security.device.bluetooth` | Hardware BLE communication |
 | **macOS** | `com.apple.security.personal-information.location` | Offline proximity coordinate logging |
+| **macOS / Windows** | `com.apple.security.network.server` / `client` | Local LAN peer socket synchronization |
 
 ---
 
 ## ⚖️ License
 AirDiary is released under the **MIT Open Source License**. 100% free, private, and open for personal and community use.
-# AirDiary
-# AirDiary

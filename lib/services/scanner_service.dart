@@ -8,10 +8,11 @@ import 'package:uuid/uuid.dart';
 
 import '../models/location_log.dart';
 import '../models/tracked_device.dart';
+import 'anti_stalking_service.dart';
 import 'broadcaster_service.dart';
 import 'storage_service.dart';
 
-/// Event model representing a live BLE detection event
+/// Event model representing a live BLE detection event for historical database logging
 class ScanDetectionEvent {
   final TrackedDevice device;
   final LocationLog log;
@@ -26,17 +27,33 @@ class ScanDetectionEvent {
   });
 }
 
+/// Real-time live RSSI event for high-frequency signal radar and hot/cold precision finding
+class LiveRssiEvent {
+  final String deviceId;
+  final String deviceName;
+  final int rssi;
+  final DateTime timestamp;
+
+  LiveRssiEvent({
+    required this.deviceId,
+    required this.deviceName,
+    required this.rssi,
+    required this.timestamp,
+  });
+}
+
 /// Passive Background Scanner & Location Logger.
 /// Continuously scans ambient BLE signatures, decodes AirDiary manufacturer data,
 /// cross-references against locally registered TrackedDevices, throttles entries
-/// via a strict 5-minute cooldown per device, and performs platform-divergent
-/// location acquisition (Hardware GPS on mobile vs (0.0, 0.0) on desktop).
+/// via a strict 5-minute cooldown per device, emits unthrottled live RSSI streams for
+/// real-time radar finding, and feeds un-tracked ambient beacons into the Anti-Stalking engine.
 class ScannerService extends ChangeNotifier {
   static final ScannerService _instance = ScannerService._internal();
   factory ScannerService() => _instance;
   ScannerService._internal();
 
   final StorageService _storageService = StorageService();
+  final AntiStalkingService _antiStalkingService = AntiStalkingService();
 
   bool _isScanning = false;
   bool get isScanning => _isScanning;
@@ -47,13 +64,18 @@ class ScannerService extends ChangeNotifier {
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   StreamSubscription<bool>? _isScanningSubscription;
 
-  // Strict 5-minute cooldown timer mapped per unique device ID
+  // Strict 5-minute cooldown timer mapped per unique device ID for DB writing
   final Map<String, DateTime> _deviceCooldownMap = {};
 
-  // Stream of real-time detection events for UI notifications
+  // Stream of periodic detection events for UI notifications and DB logging
   final StreamController<ScanDetectionEvent> _detectionController =
       StreamController<ScanDetectionEvent>.broadcast();
   Stream<ScanDetectionEvent> get detectionStream => _detectionController.stream;
+
+  // Stream of unthrottled live RSSI updates for real-time Radar / Precision Finding
+  final StreamController<LiveRssiEvent> _liveRssiController =
+      StreamController<LiveRssiEvent>.broadcast();
+  Stream<LiveRssiEvent> get liveRssiStream => _liveRssiController.stream;
 
   ScanDetectionEvent? _lastDetection;
   ScanDetectionEvent? get lastDetection => _lastDetection;
@@ -158,7 +180,21 @@ class ScannerService extends ChangeNotifier {
         // Cross-reference detected ID against local TrackedDevices
         final trackedDevice = _findTrackedDevice(detectedId);
         if (trackedDevice != null) {
+          // 1. Emit live unthrottled RSSI update for real-time Radar / Hot-Cold UI
+          _liveRssiController.add(
+            LiveRssiEvent(
+              deviceId: trackedDevice.id,
+              deviceName: trackedDevice.name,
+              rssi: result.rssi,
+              timestamp: DateTime.now(),
+            ),
+          );
+
+          // 2. Handle throttled database persistence
           _handleTrackedMatch(trackedDevice, result.rssi);
+        } else {
+          // Forward un-paired ambient signatures into Anti-Stalking engine
+          _antiStalkingService.processAmbientSighting(detectedId, result.rssi);
         }
       } catch (e) {
         debugPrint('[ScannerService] Error parsing scan result: $e');
@@ -170,7 +206,7 @@ class ScannerService extends ChangeNotifier {
   String? _extractSignatureId(ScanResult result) {
     final adv = result.advertisementData;
 
-    // 1. Check Manufacturer Specific Data (AirDiary Protocol)
+    // 1. Check Manufacturer Specific Data (AirDiary Protocol: 0x01DA)
     for (final entry in adv.manufacturerData.entries) {
       final dataBytes = entry.value;
       if (dataBytes.length >= 16) {
@@ -218,14 +254,13 @@ class ScannerService extends ChangeNotifier {
   Future<void> _handleTrackedMatch(TrackedDevice device, int rssi) async {
     final now = DateTime.now();
 
-    // Strict 5-Minute Throttle Control per Unique Device ID
+    // Strict 5-Minute Throttle Control per Unique Device ID for database writes
     final lastLogged = _deviceCooldownMap[device.id];
     if (lastLogged != null && now.difference(lastLogged) < const Duration(minutes: 5)) {
-      debugPrint('[ScannerService] Throttled match for ${device.name} (Cooldown active: ${5 - now.difference(lastLogged).inMinutes}m remaining)');
       return;
     }
 
-    debugPrint('[ScannerService] MATCH DETECTED: ${device.name} (${device.id}) @ RSSI: $rssi dBm');
+    debugPrint('[ScannerService] MATCH RECORDED: ${device.name} (${device.id}) @ RSSI: $rssi dBm');
 
     // Platform-Divergent Positioning Mechanics
     double latitude = 0.0;
@@ -299,6 +334,26 @@ class ScannerService extends ChangeNotifier {
   /// Manually trigger a mock proximity event (useful for verification and desktop debugging)
   Future<void> simulateProximityEvent(TrackedDevice device) async {
     await _handleTrackedMatch(device, -65);
+    _liveRssiController.add(
+      LiveRssiEvent(
+        deviceId: device.id,
+        deviceName: device.name,
+        rssi: -65,
+        timestamp: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Simulate a live RSSI fluctuation for Precision Finding testing
+  void simulateLiveRssi(String deviceId, String deviceName, int rssi) {
+    _liveRssiController.add(
+      LiveRssiEvent(
+        deviceId: deviceId,
+        deviceName: deviceName,
+        rssi: rssi,
+        timestamp: DateTime.now(),
+      ),
+    );
   }
 
   /// Stop continuous BLE scanning
@@ -333,6 +388,7 @@ class ScannerService extends ChangeNotifier {
     _scanSubscription?.cancel();
     _isScanningSubscription?.cancel();
     _detectionController.close();
+    _liveRssiController.close();
     super.dispose();
   }
 }

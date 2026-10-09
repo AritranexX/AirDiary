@@ -5,11 +5,11 @@ class TrackedDevice {
   final String name;
   final DateTime createdAt;
 
-  const TrackedDevice({
+  TrackedDevice({
     required this.id,
     required this.name,
-    required this.createdAt,
-  });
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
 
   /// Factory constructor to deserialize from local storage Map
   factory TrackedDevice.fromMap(Map<dynamic, dynamic> map) {

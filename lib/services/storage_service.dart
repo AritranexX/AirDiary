@@ -3,10 +3,12 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/tracked_device.dart';
 import '../models/location_log.dart';
+import '../models/safe_zone.dart';
+import '../models/rogue_beacon.dart';
 
 /// Local-First Storage Service powered by Hive.
-/// Manages Box A (TrackedDevices) and Box B (LocationLogs) strictly on local storage
-/// with zero outward network calls.
+/// Manages Box A (TrackedDevices), Box B (LocationLogs), Box C (SafeZones),
+/// and Box D (RogueBeacons) strictly on local storage with zero outward telemetry.
 class StorageService extends ChangeNotifier {
   static final StorageService _instance = StorageService._internal();
   factory StorageService() => _instance;
@@ -14,11 +16,20 @@ class StorageService extends ChangeNotifier {
 
   static const String boxTrackedDevices = 'TrackedDevices';
   static const String boxLocationLogs = 'LocationLogs';
+  static const String boxSafeZones = 'SafeZones';
+  static const String boxRogueBeacons = 'RogueBeacons';
   static const String boxAppSettings = 'AppSettings';
+
   static const String keySelfId = 'Self_ID';
+  static const String keySeparationAlerts = 'Setting_SeparationAlerts';
+  static const String keyAntiStalking = 'Setting_AntiStalking';
+  static const String keyLanSync = 'Setting_LanSync';
+  static const String keySeparationThreshold = 'Setting_SeparationThresholdMin';
 
   late Box<Map> _devicesBox;
   late Box<Map> _logsBox;
+  late Box<Map> _safeZonesBox;
+  late Box<Map> _rogueBeaconsBox;
   late Box<dynamic> _settingsBox;
 
   bool _isInitialized = false;
@@ -35,6 +46,8 @@ class StorageService extends ChangeNotifier {
 
     _devicesBox = await Hive.openBox<Map>(boxTrackedDevices);
     _logsBox = await Hive.openBox<Map>(boxLocationLogs);
+    _safeZonesBox = await Hive.openBox<Map>(boxSafeZones);
+    _rogueBeaconsBox = await Hive.openBox<Map>(boxRogueBeacons);
     _settingsBox = await Hive.openBox<dynamic>(boxAppSettings);
 
     // Initialize or retrieve the cryptographic Self_ID
@@ -51,7 +64,7 @@ class StorageService extends ChangeNotifier {
   }
 
   // ===========================================================================
-  // SELF ID MANAGEMENT
+  // SELF ID & SETTINGS MANAGEMENT
   // ===========================================================================
 
   /// Returns the current device's Self_ID
@@ -71,6 +84,38 @@ class StorageService extends ChangeNotifier {
     final newId = const Uuid().v4();
     await setSelfId(newId);
     return newId;
+  }
+
+  bool get separationAlertsEnabled =>
+      _settingsBox.get(keySeparationAlerts, defaultValue: true) as bool;
+
+  Future<void> setSeparationAlertsEnabled(bool enabled) async {
+    await _settingsBox.put(keySeparationAlerts, enabled);
+    notifyListeners();
+  }
+
+  bool get antiStalkingEnabled =>
+      _settingsBox.get(keyAntiStalking, defaultValue: true) as bool;
+
+  Future<void> setAntiStalkingEnabled(bool enabled) async {
+    await _settingsBox.put(keyAntiStalking, enabled);
+    notifyListeners();
+  }
+
+  bool get lanSyncEnabled =>
+      _settingsBox.get(keyLanSync, defaultValue: true) as bool;
+
+  Future<void> setLanSyncEnabled(bool enabled) async {
+    await _settingsBox.put(keyLanSync, enabled);
+    notifyListeners();
+  }
+
+  int get separationThresholdMinutes =>
+      (_settingsBox.get(keySeparationThreshold, defaultValue: 15) as num).toInt();
+
+  Future<void> setSeparationThresholdMinutes(int minutes) async {
+    await _settingsBox.put(keySeparationThreshold, minutes);
+    notifyListeners();
   }
 
   // ===========================================================================
@@ -179,6 +224,9 @@ class StorageService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Alias for deleting logs of a specific device
+  Future<void> clearLocationLogsForDevice(String deviceId) => deleteLogsForDevice(deviceId);
+
   /// Delete a specific log by its ID
   Future<void> deleteLog(String logId) async {
     if (!_isInitialized) return;
@@ -193,11 +241,128 @@ class StorageService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Clear all local storage databases (reset application)
+  /// Alias for clearing all stored location logs
+  Future<void> clearAllLocationLogs() => clearAllLogs();
+
+  // ===========================================================================
+  // BOX C: SAFE ZONES (CRUD)
+  // ===========================================================================
+
+  /// Retrieve all user-designated Safe Zones
+  List<SafeZone> getSafeZones() {
+    if (!_isInitialized) return [];
+    final zones = <SafeZone>[];
+    for (final raw in _safeZonesBox.values) {
+      try {
+        zones.add(SafeZone.fromMap(raw));
+      } catch (e) {
+        debugPrint('[StorageService] Error parsing safe zone: $e');
+      }
+    }
+    zones.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return zones;
+  }
+
+  /// Get single safe zone by ID
+  SafeZone? getSafeZone(String id) {
+    if (!_isInitialized) return null;
+    final raw = _safeZonesBox.get(id);
+    if (raw == null) return null;
+    return SafeZone.fromMap(raw);
+  }
+
+  /// Save or update a Safe Zone
+  Future<void> saveSafeZone(SafeZone zone) async {
+    if (!_isInitialized) await init();
+    await _safeZonesBox.put(zone.id, zone.toMap());
+    notifyListeners();
+  }
+
+  /// Delete a Safe Zone
+  Future<void> deleteSafeZone(String id) async {
+    if (!_isInitialized) return;
+    await _safeZonesBox.delete(id);
+    notifyListeners();
+  }
+
+  /// Clear all Safe Zones
+  Future<void> clearSafeZones() async {
+    if (!_isInitialized) return;
+    await _safeZonesBox.clear();
+    notifyListeners();
+  }
+
+  // ===========================================================================
+  // BOX D: ROGUE BEACONS (CRUD)
+  // ===========================================================================
+
+  /// Retrieve all detected rogue beacons
+  List<RogueBeacon> getRogueBeacons({bool includeDismissed = false}) {
+    if (!_isInitialized) return [];
+    final beacons = <RogueBeacon>[];
+    for (final raw in _rogueBeaconsBox.values) {
+      try {
+        final beacon = RogueBeacon.fromMap(raw);
+        if (includeDismissed || !beacon.isDismissed) {
+          beacons.add(beacon);
+        }
+      } catch (e) {
+        debugPrint('[StorageService] Error parsing rogue beacon: $e');
+      }
+    }
+    beacons.sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
+    return beacons;
+  }
+
+  /// Get single rogue beacon by signature ID
+  RogueBeacon? getRogueBeacon(String signatureId) {
+    if (!_isInitialized) return null;
+    final raw = _rogueBeaconsBox.get(signatureId);
+    if (raw == null) return null;
+    return RogueBeacon.fromMap(raw);
+  }
+
+  /// Save or update a rogue beacon record
+  Future<void> saveRogueBeacon(RogueBeacon beacon) async {
+    if (!_isInitialized) await init();
+    await _rogueBeaconsBox.put(beacon.signatureId, beacon.toMap());
+    notifyListeners();
+  }
+
+  /// Dismiss an active rogue beacon alert
+  Future<void> dismissRogueBeacon(String signatureId) async {
+    final existing = getRogueBeacon(signatureId);
+    if (existing != null) {
+      final updated = existing.copyWith(isDismissed: true);
+      await saveRogueBeacon(updated);
+    }
+  }
+
+  /// Delete a rogue beacon record
+  Future<void> deleteRogueBeacon(String signatureId) async {
+    if (!_isInitialized) return;
+    await _rogueBeaconsBox.delete(signatureId);
+    notifyListeners();
+  }
+
+  /// Clear all rogue beacon records
+  Future<void> clearRogueBeacons() async {
+    if (!_isInitialized) return;
+    await _rogueBeaconsBox.clear();
+    notifyListeners();
+  }
+
+  // ===========================================================================
+  // RESET ALL DATA
+  // ===========================================================================
+
+  /// Clear all local storage databases (complete application reset)
   Future<void> resetAllData() async {
     if (!_isInitialized) return;
     await _devicesBox.clear();
     await _logsBox.clear();
+    await _safeZonesBox.clear();
+    await _rogueBeaconsBox.clear();
     await _settingsBox.clear();
     await init();
     notifyListeners();

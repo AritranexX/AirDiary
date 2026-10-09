@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'services/broadcaster_service.dart';
+import 'services/lan_sync_service.dart';
 import 'services/scanner_service.dart';
+import 'services/separation_service.dart';
 import 'services/storage_service.dart';
 import 'views/dashboard_view.dart';
 
@@ -17,6 +19,13 @@ void main() async {
 
   final scannerService = ScannerService();
   await scannerService.init();
+
+  // Initialize local-only privacy background modules
+  final separationService = SeparationService();
+  separationService.init();
+
+  final lanSyncService = LanSyncService();
+  await lanSyncService.init();
 
   runApp(const AirDiaryApp());
 }
