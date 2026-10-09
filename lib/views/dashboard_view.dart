@@ -165,11 +165,16 @@ class _DashboardViewState extends State<DashboardView> {
     return Scaffold(
       backgroundColor: const Color(0xFF0D0F17),
       appBar: AppBar(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.track_changes, color: Color(0xFF00E676), size: 22),
-            SizedBox(width: 8),
-            Text('AirDiary', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 20)),
+            Image.asset(
+              'assets/logo.png',
+              width: 24,
+              height: 24,
+              errorBuilder: (context, error, stackTrace) => const Icon(Icons.track_changes, color: Color(0xFF00E676), size: 22),
+            ),
+            const SizedBox(width: 10),
+            const Text('AirDiary', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 20)),
           ],
         ),
         backgroundColor: const Color(0xFF131622),
