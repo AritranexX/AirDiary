@@ -26,10 +26,10 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --release
-      - name: Rename and Upload Artifact
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: AirDiary-android.apk
+          name: AirDiary-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
   build-macos:
@@ -43,15 +43,26 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build macos --release
-      - name: Archive macOS App
+      - name: Package macOS App and DMG
         run: |
           cd build/macos/Build/Products/Release
-          zip -r AirDiary-macos.zip AirDiary.app
-      - name: Upload Artifact
+          APP_NAME=$(ls -d *.app | head -n 1)
+          echo "Found macOS App: $APP_NAME"
+          # Create zip containing the .app bundle
+          zip -r AirDiary-macos.zip "$APP_NAME"
+          # Create DMG image
+          hdiutil create -volname "AirDiary" -srcfolder "$APP_NAME" -ov -format UDZO AirDiary-macos.dmg
+          ls -la
+      - name: Upload macOS Zip
         uses: actions/upload-artifact@v4
         with:
-          name: AirDiary-macos.zip
+          name: AirDiary-macos-zip
           path: build/macos/Build/Products/Release/AirDiary-macos.zip
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirDiary-macos-dmg
+          path: build/macos/Build/Products/Release/AirDiary-macos.dmg
 
   build-windows:
     name: Build Windows EXE
@@ -68,16 +79,16 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath AirDiary-windows.zip
-      - name: Upload Artifact
+      - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AirDiary-windows.zip
+          name: AirDiary-windows-zip
           path: AirDiary-windows.zip
 
   create-release:
     name: Create GitHub Release
     needs: [build-android, build-macos, build-windows]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && (needs.build-android.result == 'success' || needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -85,13 +96,35 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
+      - name: Prepare Final Release Assets
+        run: |
+          mkdir -p final-assets
+          find release-assets -type f
+          # Copy Android APK
+          if [ -f release-assets/AirDiary-android-apk/app-release.apk ]; then
+            cp release-assets/AirDiary-android-apk/app-release.apk final-assets/AirDiary-android.apk
+          fi
+          # Copy macOS DMG
+          if [ -f release-assets/AirDiary-macos-dmg/AirDiary-macos.dmg ]; then
+            cp release-assets/AirDiary-macos-dmg/AirDiary-macos.dmg final-assets/AirDiary-macos.dmg
+          fi
+          # Copy macOS Zip
+          if [ -f release-assets/AirDiary-macos-zip/AirDiary-macos.zip ]; then
+            cp release-assets/AirDiary-macos-zip/AirDiary-macos.zip final-assets/AirDiary-macos.zip
+          fi
+          # Copy Windows Zip
+          if [ -f release-assets/AirDiary-windows-zip/AirDiary-windows.zip ]; then
+            cp release-assets/AirDiary-windows-zip/AirDiary-windows.zip final-assets/AirDiary-windows.zip
+          fi
+          echo "Assets ready for publishing:"
+          ls -lh final-assets
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-assets/AirDiary-android.apk/app-release.apk
-            release-assets/AirDiary-macos.zip/AirDiary-macos.zip
-            release-assets/AirDiary-windows.zip/AirDiary-windows.zip
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          name: AirDiary v1.0.0
+          files: final-assets/*
           draft: false
           prerelease: false
+          make_latest: true
           generate_release_notes: true
