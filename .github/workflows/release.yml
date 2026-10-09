@@ -14,19 +14,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - name: Accept Android Licenses
+        run: yes | flutter doctor --android-licenses || true
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
       - name: Build Android APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release || {
+            echo "==== GRADLE DETAILED BUILD STACKTRACE ===="
+            cd android && ./gradlew assembleRelease --stacktrace --info
+          }
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
