@@ -3,12 +3,12 @@
 > A 100% free, serverless, privacy-first peer-to-peer tracking solution built using Flutter. AirDiary acts as a connectionless local logging diary, securely mapping the location history of your offline devices onto your phone using localized BLE beacon metrics.
 
 ### 📥 Pre-compiled App Downloads
-[![Download for Android APK](https://img.shields.io/badge/Android-Download%20APK-red?style=for-the-badge&logo=android&logoColor=white)](#)
-[![Download for iOS App](https://img.shields.io/badge/iOS-Download%20App-red?style=for-the-badge&logo=apple&logoColor=white)](#)
-[![Download for Windows EXE](https://img.shields.io/badge/Windows-Download%20EXE-red?style=for-the-badge&logo=windows&logoColor=white)](#)
-[![Download for macOS DMG](https://img.shields.io/badge/macOS-Download%20DMG-red?style=for-the-badge&logo=apple&logoColor=white)](#)
+[![Download for Android APK](https://img.shields.io/badge/Android-Download%20APK-red?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AritranexX/AirDiary/releases/latest/download/AirDiary-android.apk)
+[![Download for iOS App](https://img.shields.io/badge/iOS-Download%20App-red?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/AritranexX/AirDiary/releases/latest/download/AirDiary-ios.ipa)
+[![Download for Windows EXE](https://img.shields.io/badge/Windows-Download%20EXE-red?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/AritranexX/AirDiary/releases/latest/download/AirDiary-windows.zip)
+[![Download for macOS DMG](https://img.shields.io/badge/macOS-Download%20DMG-red?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/AritranexX/AirDiary/releases/latest/download/AirDiary-macos.dmg)
 
-*(Note for users: Replace the '#' link paths with your actual repo release URLs once uploaded to GitHub)*
+> Direct repository release downloads: [GitHub Releases — AirDiary v1.0.0](https://github.com/AritranexX/AirDiary/releases)
 
 ---
 
