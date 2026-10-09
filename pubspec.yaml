@@ -43,7 +43,6 @@ dependencies:
   url_launcher: ^6.3.3
   intl: ^0.20.3
   flutter_blue_plus: ^2.3.14
-  flutter_reactive_ble: ^5.6.0
   flutter_ble_peripheral: ^3.1.0
 
 dev_dependencies:
