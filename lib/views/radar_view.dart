@@ -31,6 +31,10 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
   DateTime? _lastSignalTime;
   Timer? _decayTimer;
 
+  // Calibration: calibrated 1-meter TxPower & environmental path-loss exponent
+  double _txPowerAt1m = -59.0;
+  double _pathLossN = 2.2;
+
   // Smoothing constant for Exponential Weighted Moving Average (EWMA)
   static const double _alpha = 0.35;
 
@@ -42,11 +46,20 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
       duration: const Duration(seconds: 3),
     )..repeat();
 
+    _scannerService.addListener(_onServiceUpdate);
     _loadDevices();
+
+    // Auto-activate the passive scanner immediately upon entering the radar screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scannerService.isScanning) {
+        _scannerService.startScanning();
+      }
+    });
 
     // Listen to high-frequency live RSSI stream
     _rssiSubscription = _scannerService.liveRssiStream.listen((event) {
-      if (_selectedDevice != null && event.deviceId.toLowerCase() == _selectedDevice!.id.toLowerCase()) {
+      if (_selectedDevice != null &&
+          _matchesSelectedDevice(event.deviceId)) {
         _onRssiReceived(event.rssi);
       }
     });
@@ -65,11 +78,24 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
     });
   }
 
+  void _onServiceUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  bool _matchesSelectedDevice(String eventDeviceId) {
+    final selected = _selectedDevice;
+    if (selected == null) return false;
+    final normalized = eventDeviceId.trim().toLowerCase();
+    return normalized == selected.id.trim().toLowerCase() ||
+        normalized == selected.name.trim().toLowerCase();
+  }
+
   void _loadDevices() {
     final devices = _storageService.getTrackedDevices();
     setState(() {
       _devices = devices;
-      if (widget.initialDevice != null && devices.any((d) => d.id == widget.initialDevice!.id)) {
+      if (widget.initialDevice != null &&
+          devices.any((d) => d.id == widget.initialDevice!.id)) {
         _selectedDevice = widget.initialDevice;
       } else if (devices.isNotEmpty) {
         _selectedDevice = devices.first;
@@ -93,11 +119,27 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
 
   /// Log-distance path loss formula: distance = 10 ^ ((TxPower - RSSI) / (10 * n))
   double _computeDistance(double rssi) {
-    const double txPowerAt1m = -59.0;
-    const double n = 2.2;
-    final exponent = (txPowerAt1m - rssi) / (10.0 * n);
+    final exponent = (_txPowerAt1m - rssi) / (10.0 * _pathLossN);
     final dist = math.pow(10.0, exponent).toDouble();
     return dist.clamp(0.1, 30.0);
+  }
+
+  /// Stable physical bearing (radians) derived deterministically from the
+  /// target device identity so the blip rests at a fixed azimuth.
+  double get _targetBearing {
+    final id = _selectedDevice?.id ?? 'unknown';
+    final sum = id.codeUnits.fold<int>(0, (prev, e) => prev + e);
+    return (sum % 360) * (math.pi / 180.0);
+  }
+
+  /// Phosphor illumination: brightest the instant the sweep arm crosses the
+  /// target bearing, then decays exponentially until the arm returns.
+  double _phosphorIllumination(double sweepAngle) {
+    const twoPi = math.pi * 2;
+    double delta = (sweepAngle - _targetBearing) % twoPi;
+    if (delta < 0) delta += twoPi;
+    final signalStrength = ((_smoothedRssi + 100) / 70.0).clamp(0.0, 1.0);
+    return (math.exp(-delta * 1.5) + signalStrength * 0.08).clamp(0.0, 1.0);
   }
 
   /// Heat status description based on smoothed RSSI
@@ -123,6 +165,7 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
     _sweepController.dispose();
     _rssiSubscription?.cancel();
     _decayTimer?.cancel();
+    _scannerService.removeListener(_onServiceUpdate);
     super.dispose();
   }
 
@@ -142,6 +185,53 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
           ],
         ),
         actions: [
+          // Live scanner status pill + toggle
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: InkWell(
+              onTap: _scannerService.toggleScanning,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _scannerService.isScanning
+                      ? const Color(0xFF00E676).withAlpha(28)
+                      : const Color(0xFF64748B).withAlpha(28),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _scannerService.isScanning
+                        ? const Color(0xFF00E676)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _scannerService.isScanning
+                          ? Icons.bluetooth_searching
+                          : Icons.bluetooth_disabled,
+                      size: 14,
+                      color: _scannerService.isScanning
+                          ? const Color(0xFF00E676)
+                          : const Color(0xFF94A3B8),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _scannerService.isScanning ? 'LIVE' : 'STANDBY',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: _scannerService.isScanning
+                            ? const Color(0xFF00E676)
+                            : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh Devices',
@@ -203,6 +293,7 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
   Widget _buildRadarVisualizer() {
     final radarRadius = 140.0;
     final normalizedSignal = ((_smoothedRssi + 100) / 70.0).clamp(0.0, 1.0);
+    final bearingDegrees = (_targetBearing * 180.0 / math.pi).round();
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -230,7 +321,18 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
+
+          // Fixed bearing readout
+          Text(
+            'Target Bearing: ${bearingDegrees.toString().padLeft(3, '0')}° (fixed azimuth)',
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF64748B),
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 16),
 
           // Circular Radar Graphic with CustomPainter
           SizedBox(
@@ -239,9 +341,12 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
             child: AnimatedBuilder(
               animation: _sweepController,
               builder: (context, child) {
+                final sweepAngle = _sweepController.value * 2 * math.pi;
                 return CustomPaint(
                   painter: _RadarPainter(
-                    sweepAngle: _sweepController.value * 2 * math.pi,
+                    sweepAngle: sweepAngle,
+                    targetBearing: _targetBearing,
+                    illumination: _phosphorIllumination(sweepAngle),
                     proximityColor: _proximityColor,
                     signalNormalized: normalizedSignal,
                     hasSignal: _lastSignalTime != null,
@@ -348,7 +453,7 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
                   label: 'Est. Distance',
                   value: _lastSignalTime != null ? '~${_estimatedDistance.toStringAsFixed(1)} m' : '-- m',
                   subtext: _lastSignalTime != null
-                      ? (_estimatedDistance < 1.0 ? 'Within arm reach' : 'Path loss 2.2n')
+                      ? (_estimatedDistance < 1.0 ? 'Within arm reach' : 'Path loss ${_pathLossN.toStringAsFixed(1)}n')
                       : 'Awaiting signal',
                   icon: Icons.straighten,
                   color: _proximityColor,
@@ -373,7 +478,103 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
               valueColor: AlwaysStoppedAnimation<Color>(_proximityColor),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
+          // Calibration Section
+          const Text(
+            'Signal Calibration',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('TxPower @1m', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text('${_txPowerAt1m.toStringAsFixed(1)} dBm',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF00E5FF), fontFamily: 'monospace')),
+                  ],
+                ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: const Color(0xFF00E5FF),
+                    thumbColor: const Color(0xFF00E5FF),
+                    overlayColor: const Color(0xFF00E5FF).withAlpha(40),
+                  ),
+                  child: Slider(
+                    value: _txPowerAt1m,
+                    min: -80,
+                    max: -30,
+                    divisions: 50,
+                    onChanged: (val) {
+                      setState(() {
+                        _txPowerAt1m = val;
+                        if (_lastSignalTime != null) {
+                          _estimatedDistance = _computeDistance(_smoothedRssi);
+                        }
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Path-loss exponent (n)', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    Text(_pathLossN.toStringAsFixed(2),
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF00E5FF), fontFamily: 'monospace')),
+                  ],
+                ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: const Color(0xFF00E5FF),
+                    thumbColor: const Color(0xFF00E5FF),
+                    overlayColor: const Color(0xFF00E5FF).withAlpha(40),
+                  ),
+                  child: Slider(
+                    value: _pathLossN,
+                    min: 1.5,
+                    max: 3.5,
+                    divisions: 40,
+                    onChanged: (val) {
+                      setState(() {
+                        _pathLossN = val;
+                        if (_lastSignalTime != null) {
+                          _estimatedDistance = _computeDistance(_smoothedRssi);
+                        }
+                      });
+                    },
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _txPowerAt1m = -59.0;
+                        _pathLossN = 2.2;
+                        if (_lastSignalTime != null) {
+                          _estimatedDistance = _computeDistance(_smoothedRssi);
+                        }
+                      });
+                    },
+                    icon: const Icon(Icons.restore, size: 14, color: Color(0xFF00E5FF)),
+                    label: const Text('Factory Defaults', style: TextStyle(fontSize: 11, color: Color(0xFF00E5FF))),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
 
           // Simulation & Test Triggers
           const Text(
@@ -459,12 +660,16 @@ class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMix
 /// CustomPainter for Circular Radar Sweep & Concentric Rings
 class _RadarPainter extends CustomPainter {
   final double sweepAngle;
+  final double targetBearing;
+  final double illumination;
   final Color proximityColor;
   final double signalNormalized;
   final bool hasSignal;
 
   _RadarPainter({
     required this.sweepAngle,
+    required this.targetBearing,
+    required this.illumination,
     required this.proximityColor,
     required this.signalNormalized,
     required this.hasSignal,
@@ -526,24 +731,55 @@ class _RadarPainter extends CustomPainter {
     );
     canvas.restore();
 
-    // Signal Target Blip (Hot/Cold distance representation)
+    // Sweep arm leading edge line
+    final armPaint = Paint()
+      ..color = proximityColor.withAlpha(90)
+      ..strokeWidth = 1.5;
+    canvas.drawLine(
+      center,
+      Offset(
+        center.dx + maxRadius * math.cos(sweepAngle - math.pi / 2),
+        center.dy + maxRadius * math.sin(sweepAngle - math.pi / 2),
+      ),
+      armPaint,
+    );
+
+    // Fixed-bearing target blip with phosphor illumination decay
     if (hasSignal && signalNormalized > 0.05) {
       final blipDistance = maxRadius * (1.0 - (signalNormalized * 0.85));
-      final blipAngle = sweepAngle - 0.4;
+      final blipAngle = targetBearing; // FIXED bearing — decoupled from sweep arm
       final blipX = center.dx + blipDistance * math.cos(blipAngle);
       final blipY = center.dy + blipDistance * math.sin(blipAngle);
 
-      // Blip Glow
-      final glowPaint = Paint()
-        ..color = proximityColor.withAlpha(100)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-      canvas.drawCircle(Offset(blipX, blipY), 14, glowPaint);
+      // Bearing spoke when illuminated
+      if (illumination > 0.35) {
+        final spokePaint = Paint()
+          ..color = proximityColor.withAlpha((60 * illumination).round())
+          ..strokeWidth = 1.0;
+        canvas.drawLine(center, Offset(blipX, blipY), spokePaint);
+      }
 
-      // Blip Core
+      // Phosphor glow halo — intensity follows illumination decay
+      final glowPaint = Paint()
+        ..color = proximityColor.withAlpha((140 * illumination).round())
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 4 + 8 * illumination);
+      canvas.drawCircle(
+        Offset(blipX, blipY),
+        10 + 6 * illumination,
+        glowPaint,
+      );
+
+      // Blip core — alpha fades with phosphor decay
       final blipPaint = Paint()
-        ..color = proximityColor
+        ..color = proximityColor.withAlpha((255 * (0.25 + 0.75 * illumination)).round())
         ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(blipX, blipY), 7, blipPaint);
+      canvas.drawCircle(Offset(blipX, blipY), 5 + 3 * illumination, blipPaint);
+
+      // Blip inner highlight
+      final corePaint = Paint()
+        ..color = Colors.white.withAlpha((200 * illumination).round())
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(Offset(blipX, blipY), 2.5, corePaint);
     }
 
     // Center Device Anchor Icon
@@ -556,6 +792,8 @@ class _RadarPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RadarPainter oldDelegate) {
     return oldDelegate.sweepAngle != sweepAngle ||
+        oldDelegate.targetBearing != targetBearing ||
+        oldDelegate.illumination != illumination ||
         oldDelegate.proximityColor != proximityColor ||
         oldDelegate.signalNormalized != signalNormalized ||
         oldDelegate.hasSignal != hasSignal;

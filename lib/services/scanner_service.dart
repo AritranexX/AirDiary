@@ -9,7 +9,6 @@ import 'package:uuid/uuid.dart';
 import '../models/location_log.dart';
 import '../models/tracked_device.dart';
 import 'anti_stalking_service.dart';
-import 'broadcaster_service.dart';
 import 'storage_service.dart';
 
 /// Event model representing a live BLE detection event for historical database logging
@@ -174,11 +173,11 @@ class ScannerService extends ChangeNotifier {
 
     for (final result in results) {
       try {
-        final detectedId = _extractSignatureId(result);
-        if (detectedId == null) continue;
+        final candidates = _extractCandidateSignatures(result);
+        if (candidates.isEmpty) continue;
 
-        // Cross-reference detected ID against local TrackedDevices
-        final trackedDevice = _findTrackedDevice(detectedId);
+        // Cross-reference detected candidates against local TrackedDevices
+        final trackedDevice = _findTrackedDevice(candidates);
         if (trackedDevice != null) {
           // 1. Emit live unthrottled RSSI update for real-time Radar / Hot-Cold UI
           _liveRssiController.add(
@@ -194,7 +193,8 @@ class ScannerService extends ChangeNotifier {
           _handleTrackedMatch(trackedDevice, result.rssi);
         } else {
           // Forward un-paired ambient signatures into Anti-Stalking engine
-          _antiStalkingService.processAmbientSighting(detectedId, result.rssi);
+          final primarySignature = candidates.first;
+          _antiStalkingService.processAmbientSighting(primarySignature, result.rssi);
         }
       } catch (e) {
         debugPrint('[ScannerService] Error parsing scan result: $e');
@@ -202,49 +202,81 @@ class ScannerService extends ChangeNotifier {
     }
   }
 
-  /// Extracts the potential device UUID signature from raw BLE advertisement data
-  String? _extractSignatureId(ScanResult result) {
+  /// Extracts all potential device signatures, UUIDs, and MAC addresses from raw BLE advertisement data
+  Set<String> _extractCandidateSignatures(ScanResult result) {
+    final candidates = <String>{};
     final adv = result.advertisementData;
 
-    // 1. Check Manufacturer Specific Data (AirDiary Protocol: 0x01DA)
+    // 1. Physical / Virtual Remote Hardware ID (MAC address / CoreBluetooth UUID)
+    final remoteId = result.device.remoteId.str.trim();
+    if (remoteId.isNotEmpty) {
+      candidates.add(remoteId.toLowerCase());
+      candidates.add(remoteId.replaceAll(':', '').replaceAll('-', '').toLowerCase());
+    }
+
+    // 2. Advertised & Platform Local Names
+    if (adv.advName.trim().isNotEmpty) {
+      candidates.add(adv.advName.trim().toLowerCase());
+    }
+    if (result.device.platformName.trim().isNotEmpty) {
+      candidates.add(result.device.platformName.trim().toLowerCase());
+    }
+
+    // 3. Manufacturer Specific Data (AirDiary: 0x01DA, Apple/iBeacon: 0x004C, AltBeacon, etc.)
     for (final entry in adv.manufacturerData.entries) {
       final dataBytes = entry.value;
       if (dataBytes.length >= 16) {
         try {
           final uuidCandidate = Uuid.unparse(dataBytes.sublist(0, 16)).toLowerCase();
-          return uuidCandidate;
+          candidates.add(uuidCandidate);
+          candidates.add(uuidCandidate.replaceAll('-', ''));
         } catch (_) {}
       }
-    }
-
-    // 2. Check Service UUIDs
-    for (final serviceGuid in adv.serviceUuids) {
-      final guidStr = serviceGuid.str128.toLowerCase();
-      if (guidStr != BroadcasterService.airDiaryServiceUuid.toLowerCase()) {
-        return guidStr;
+      // Hex representation of first 8-16 bytes
+      if (dataBytes.isNotEmpty) {
+        final hexStr = dataBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toLowerCase();
+        candidates.add(hexStr);
       }
     }
 
-    // 3. Check Service Data payload
+    // 4. Service UUIDs
+    for (final serviceGuid in adv.serviceUuids) {
+      final str128 = serviceGuid.str128.toLowerCase();
+      candidates.add(str128);
+      candidates.add(str128.replaceAll('-', ''));
+      final str = serviceGuid.str.toLowerCase();
+      candidates.add(str);
+    }
+
+    // 5. Service Data Payload
     for (final entry in adv.serviceData.entries) {
       if (entry.value.length >= 16) {
         try {
-          return Uuid.unparse(entry.value.sublist(0, 16)).toLowerCase();
+          final serviceDataUuid = Uuid.unparse(entry.value.sublist(0, 16)).toLowerCase();
+          candidates.add(serviceDataUuid);
         } catch (_) {}
       }
     }
 
-    return null;
+    return candidates;
   }
 
-  /// Cross-reference signature against local TrackedDevices box
-  TrackedDevice? _findTrackedDevice(String signatureId) {
-    final normalized = signatureId.trim().toLowerCase();
+  /// Cross-reference candidate signatures against local TrackedDevices box
+  TrackedDevice? _findTrackedDevice(Set<String> candidateSignatures) {
     final devices = _storageService.getTrackedDevices();
 
     for (final device in devices) {
-      if (device.id.trim().toLowerCase() == normalized) {
-        return device;
+      final deviceId = device.id.trim().toLowerCase();
+      final deviceIdClean = deviceId.replaceAll(':', '').replaceAll('-', '');
+      final deviceName = device.name.trim().toLowerCase();
+
+      for (final candidate in candidateSignatures) {
+        final candidateClean = candidate.replaceAll(':', '').replaceAll('-', '');
+        if (candidate == deviceId ||
+            candidateClean == deviceIdClean ||
+            candidate == deviceName) {
+          return device;
+        }
       }
     }
     return null;

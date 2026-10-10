@@ -164,8 +164,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
-          name: AirDiary v1.0.0
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.2.0' }}
+          name: AirDiary ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.2.0' }}
           files: final-assets/*
           draft: false
           prerelease: false

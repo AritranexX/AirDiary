@@ -108,7 +108,8 @@ air_diary/
 │   │   ├── lan_sync_service.dart      # UDP discovery & TCP socket P2P sync
 │   │   ├── scanner_service.dart       # Ambient BLE scanner & unthrottled RSSI stream
 │   │   ├── separation_service.dart    # Left-behind separation alert engine
-│   │   └── storage_service.dart       # 100% offline Hive database engine (Boxes A-E)
+│   │   ├── storage_service.dart       # 100% offline Hive database engine (Boxes A-E)
+│   │   └── update_service.dart        # In-app GitHub release update & platform asset matcher
 │   └── views/
 │       ├── anti_stalking_view.dart    # Rogue beacon security shield & audit
 │       ├── dashboard_view.dart        # 5-tab main view with alert banners
@@ -120,7 +121,7 @@ air_diary/
 ├── test/
 │   ├── models_test.dart       # Serialization & mathematical verification tests
 │   └── services_test.dart     # EWMA, Haversine, LAN protocol & anti-stalking tests
-├── pubspec.yaml               # Dependencies & asset manifests (v1.1.0+2)
+├── pubspec.yaml               # Dependencies & asset manifests (v1.2.0+3)
 └── README.md                  # Master documentation & download badges
 ```
 

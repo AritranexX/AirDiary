@@ -4,6 +4,7 @@ import 'services/lan_sync_service.dart';
 import 'services/scanner_service.dart';
 import 'services/separation_service.dart';
 import 'services/storage_service.dart';
+import 'services/update_service.dart';
 import 'views/dashboard_view.dart';
 
 void main() async {
@@ -26,6 +27,10 @@ void main() async {
 
   final lanSyncService = LanSyncService();
   await lanSyncService.init();
+
+  // Initialize GitHub release auto-update engine (silent background checker)
+  final updateService = UpdateService();
+  updateService.init();
 
   runApp(const AirDiaryApp());
 }

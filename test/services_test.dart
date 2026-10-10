@@ -6,9 +6,19 @@ import 'package:air_diary/models/location_log.dart';
 import 'package:air_diary/models/rogue_beacon.dart';
 import 'package:air_diary/models/lan_peer.dart';
 import 'package:air_diary/services/lan_sync_service.dart';
+import 'package:air_diary/services/update_service.dart';
 
 void main() {
   group('AirDiary Services Logic & Math Verification', () {
+    test('In-App GitHub Release Update Engine semver comparison logic', () {
+      final updateService = UpdateService();
+
+      expect(UpdateService.currentAppVersion, '1.2.0+3');
+      expect(UpdateService.githubRepoOwner, 'AritranexX');
+      expect(UpdateService.githubRepoName, 'AirDiary');
+      expect(updateService.updateInfo.currentVersion, '1.2.0+3');
+      expect(updateService.updateInfo.hasUpdate, isFalse);
+    });
     test('Exponential Weighted Moving Average (EWMA) RSSI Filter math', () {
       const double alpha = 0.35;
       double smoothedRssi = -80.0;
